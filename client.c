@@ -18,17 +18,34 @@ static int read_random(void* buffer, size_t num) {
 }
 
 int main(int argc, char* argv[]) {
-   if (argc != 2) {
-      fputs("Usage: client <address>\n", stderr);
+   uint16_t port = 5555;
+   int option;
+   while ((option = getopt(argc, argv, ":p:")) != -1) {
+      char* endp;
+      switch (option) {
+      case 'p':
+         port = (uint16_t)strtoul(optarg, &endp, 10);
+         if (*endp) {
+            error("'%s' is not a valid port number", optarg);
+            return 1;
+         }
+         break;
+      default: goto print_usage;
+      }
+   }
+
+   if ((argc - optind) != 1) {
+   print_usage:
+      fputs("Usage: client [-p port] <address>\n", stderr);
       return 1;
    }
 
    struct sockaddr_in server_addr;
    server_addr.sin_family = AF_INET;
-   server_addr.sin_port = htons(5555);
-   server_addr.sin_addr.s_addr = inet_addr(argv[1]);
+   server_addr.sin_port = htons(port);
+   server_addr.sin_addr.s_addr = inet_addr(argv[optind]);
    if (server_addr.sin_addr.s_addr == 0xffffffff) {
-      error("'%s' is not a valid IPv4 address", argv[1]);
+      error("'%s' is not a valid IPv4 address", argv[optind]);
       return 1;
    }
 
@@ -60,12 +77,17 @@ int main(int argc, char* argv[]) {
    }
    
    read_random(buffer, len_buffer);
-
-   if (send(sock, buffer, len_buffer, 0) != len_buffer) {
-      error("failed to send image data: %s", geterr());
-      free(buffer);
-      close(sock);
-      return 1;
+   
+   size_t sent = 0;
+   while (sent < len_buffer) {
+      const ssize_t tmp = send(sock, buffer + sent, len_buffer - sent, 0);
+      if (tmp < 0) {
+         error("failed to send image data: %s", geterr());
+         free(buffer);
+         close(sock);
+         return 1;
+      }
+      sent += tmp;
    }
 
    free(buffer);
